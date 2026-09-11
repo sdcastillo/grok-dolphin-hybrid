@@ -1,0 +1,9 @@
+*.gguf
+.cache/
+__pycache__/
+*.pyc
+.env
+hf_token.env
+.venv/
+hf-venv/
+*.safetensors
