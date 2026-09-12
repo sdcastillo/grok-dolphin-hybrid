@@ -44,3 +44,13 @@ python3 register.py who Sam
 python3 register.py revoke --email them@example.com
 bash status.sh   # also writes status.html (local, no location)
 ```
+
+## Invite letter (no send)
+
+Copy `INVITE_LETTER.md`, or fill a local draft:
+
+```bash
+python3 invite_letter.py --first NAME --last NAME --email them@example.com -o ~/DOLPHIN_POD/invite_draft.md
+```
+
+Then invite them in the Tailscale admin console. Do not auto-enroll devices.
