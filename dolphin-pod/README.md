@@ -36,3 +36,12 @@ python3 register.py revoke --email them@example.com
 python3 register.py export -o export.csv
 bash status.sh
 ```
+
+## Contact types
+
+```bash
+python3 register.py types
+python3 register.py add --first NAME --last NAME --email a@b.c --type business
+python3 register.py set-type --name NAME --type researcher
+python3 register.py list --type client
+```

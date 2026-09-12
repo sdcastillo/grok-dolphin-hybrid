@@ -8,6 +8,41 @@ from pathlib import Path
 
 DB = Path(__file__).resolve().parent / "dolphin_pod.sqlite"
 
+# role = mesh privilege. contact_type = relationship bucket (private).
+CONTACT_TYPES = {
+    "self": "you",
+    "business": "business",
+    "client": "client",
+    "manager": "future boss / manager",
+    "researcher": "student / researcher",
+    "romantic": "romantic / spouse potential",
+}
+ALIASES = {
+    "boss": "manager",
+    "future boss": "manager",
+    "future-boss": "manager",
+    "future boss and manager": "manager",
+    "student": "researcher",
+    "student or researcher": "researcher",
+    "research": "researcher",
+    "spouse": "romantic",
+    "dating": "romantic",
+    "romantic spouse potential": "romantic",
+    "me": "self",
+    "owner": "self",
+}
+
+
+def normalize_type(value: str | None) -> str | None:
+    if value is None or value.strip() == "":
+        return None
+    key = value.strip().lower()
+    key = ALIASES.get(key, key)
+    if key not in CONTACT_TYPES:
+        allowed = ", ".join(CONTACT_TYPES)
+        raise SystemExit(f"unknown contact type {value!r}. use: {allowed}")
+    return key
+
 
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB)
@@ -16,21 +51,33 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
-def upsert_customer(conn, first, last, email=None, phone=None, display=None, role="member", notes=None) -> int:
+def upsert_customer(
+    conn,
+    first,
+    last,
+    email=None,
+    phone=None,
+    display=None,
+    role="member",
+    notes=None,
+    contact_type=None,
+) -> int:
     display = display or f"{first} {last}"
+    contact_type = normalize_type(contact_type)
     if email:
         row = conn.execute("SELECT id FROM customers WHERE email = ?", (email,)).fetchone()
         if row:
             conn.execute(
                 """UPDATE customers SET first_name=?, last_name=?, display_name=?, phone=COALESCE(?, phone),
-                   role=?, notes=COALESCE(?, notes), updated_at=datetime('now') WHERE id=?""",
-                (first, last, display, phone, role, notes, row["id"]),
+                   role=?, notes=COALESCE(?, notes),
+                   contact_type=COALESCE(?, contact_type), updated_at=datetime('now') WHERE id=?""",
+                (first, last, display, phone, role, notes, contact_type, row["id"]),
             )
             return row["id"]
     cur = conn.execute(
-        """INSERT INTO customers (first_name, last_name, display_name, email, phone, role, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (first, last, display, email, phone, role, notes),
+        """INSERT INTO customers (first_name, last_name, display_name, email, phone, role, notes, contact_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (first, last, display, email, phone, role, notes, contact_type),
     )
     return cur.lastrowid
 
@@ -53,32 +100,36 @@ def upsert_device(conn, customer_id, name, ip=None, ipv6=None, os=None, online=0
     return cur.lastrowid
 
 
-def add_invite(conn, email, first=None, last=None, role="dev"):
+def add_invite(conn, email, first=None, last=None, role="dev", contact_type=None):
     import secrets
+
     token = secrets.token_urlsafe(16)
+    contact_type = normalize_type(contact_type)
     conn.execute(
-        """INSERT INTO invites (email, first_name, last_name, role, token, status)
-           VALUES (?, ?, ?, ?, ?, 'pending')""",
-        (email, first, last, role, token),
+        """INSERT INTO invites (email, first_name, last_name, role, contact_type, token, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending')""",
+        (email, first, last, role, contact_type, token),
     )
     return token
 
 
 def list_invites(conn):
     rows = conn.execute(
-        "SELECT id, email, first_name, last_name, role, status, created_at FROM invites ORDER BY id"
+        "SELECT id, email, first_name, last_name, role, contact_type, status, created_at FROM invites ORDER BY id"
     ).fetchall()
     if not rows:
         print("(no invites)")
         return
-    print(f"{'id':<4} {'status':<10} {'role':<8} {'email':<36} {'name'}")
+    print(f"{'id':<4} {'status':<10} {'type':<12} {'role':<8} {'email':<36} {'name'}")
     for r in rows:
         name = " ".join(x for x in (r["first_name"], r["last_name"]) if x)
-        print(f"{r['id']:<4} {r['status']:<10} {r['role']:<8} {(r['email'] or ''):<36} {name}")
+        print(
+            f"{r['id']:<4} {r['status']:<10} {(r['contact_type'] or ''):<12} {r['role']:<8} "
+            f"{(r['email'] or ''):<36} {name}"
+        )
 
 
-
-def accept_invite(conn, email=None, token=None, phone=None, machine=None, ip=None, os=None) -> int:
+def accept_invite(conn, email=None, token=None, phone=None, machine=None, ip=None, os=None, contact_type=None) -> int:
     if token:
         inv = conn.execute("SELECT * FROM invites WHERE token = ? AND status = 'pending'", (token,)).fetchone()
     elif email:
@@ -92,7 +143,8 @@ def accept_invite(conn, email=None, token=None, phone=None, machine=None, ip=Non
         raise SystemExit("no pending invite")
     first = inv["first_name"] or "Pending"
     last = inv["last_name"] or "Member"
-    cid = upsert_customer(conn, first, last, inv["email"], phone, role=inv["role"] or "dev")
+    ctype = contact_type or inv["contact_type"]
+    cid = upsert_customer(conn, first, last, inv["email"], phone, role=inv["role"] or "dev", contact_type=ctype)
     if machine:
         upsert_device(conn, cid, machine, ip, os=os)
     conn.execute(
@@ -104,17 +156,44 @@ def accept_invite(conn, email=None, token=None, phone=None, machine=None, ip=Non
 
 def export_csv(conn, path: str) -> None:
     import csv
+
     rows = conn.execute("SELECT * FROM customer_devices ORDER BY last_name, first_name").fetchall()
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["name", "first_name", "last_name", "email", "phone", "tailscale_name", "tailscale_ip", "os", "online", "last_seen"])
+        w.writerow(
+            [
+                "name",
+                "first_name",
+                "last_name",
+                "email",
+                "phone",
+                "role",
+                "contact_type",
+                "tailscale_name",
+                "tailscale_ip",
+                "os",
+                "online",
+                "last_seen",
+            ]
+        )
         for r in rows:
-            w.writerow([
-                r["name"], r["first_name"], r["last_name"], r["email"], r["phone"],
-                r["tailscale_name"], r["tailscale_ip"], r["os"], r["online"], r["last_seen"],
-            ])
+            w.writerow(
+                [
+                    r["name"],
+                    r["first_name"],
+                    r["last_name"],
+                    r["email"],
+                    r["phone"],
+                    r["role"] if "role" in r.keys() else "",
+                    r["contact_type"] if "contact_type" in r.keys() else "",
+                    r["tailscale_name"],
+                    r["tailscale_ip"],
+                    r["os"],
+                    r["online"],
+                    r["last_seen"],
+                ]
+            )
     print(f"wrote {path} ({len(rows)} rows)")
-
 
 
 def revoke_invite(conn, email=None, token=None, invite_id=None) -> int:
@@ -144,20 +223,23 @@ def who(conn, q: str) -> None:
     like = f"%{q}%"
     people = conn.execute(
         """SELECT DISTINCT c.id, COALESCE(c.display_name, c.first_name || ' ' || c.last_name) AS name,
-                  c.email, c.phone, c.role
+                  c.email, c.phone, c.role, c.contact_type
            FROM customers c
            LEFT JOIN devices d ON d.customer_id = c.id
            WHERE c.first_name LIKE ? OR c.last_name LIKE ? OR c.display_name LIKE ?
               OR c.email LIKE ? OR c.phone LIKE ? OR d.tailscale_name LIKE ?
-              OR d.tailscale_ip LIKE ?
+              OR d.tailscale_ip LIKE ? OR IFNULL(c.contact_type,'') LIKE ?
            ORDER BY c.last_name, c.first_name""",
-        (like, like, like, like, like, like, like),
+        (like, like, like, like, like, like, like, like),
     ).fetchall()
     if not people:
         print(f"(no match for {q!r})")
         return
     for c in people:
-        print(f"{c['name']}  {c['email'] or ''}  {c['phone'] or ''}  role={c['role']}")
+        print(
+            f"{c['name']}  {c['email'] or ''}  {c['phone'] or ''}  "
+            f"type={c['contact_type'] or '-'}  role={c['role']}"
+        )
         devs = conn.execute(
             "SELECT tailscale_name, tailscale_ip, os, online, last_seen FROM devices WHERE customer_id=? ORDER BY tailscale_name",
             (c["id"],),
@@ -166,19 +248,58 @@ def who(conn, q: str) -> None:
             print("  (no devices)")
         for d in devs:
             on = "online" if d["online"] else "offline"
-            print(f"  {d['tailscale_name']:<18} {(d['tailscale_ip'] or ''):<16} {(d['os'] or ''):<8} {on}  {d['last_seen'] or ''}")
+            print(
+                f"  {d['tailscale_name']:<18} {(d['tailscale_ip'] or ''):<16} "
+                f"{(d['os'] or ''):<8} {on}  {d['last_seen'] or ''}"
+            )
 
 
-def list_all(conn):
-    rows = conn.execute("SELECT * FROM customer_devices ORDER BY last_name, first_name, tailscale_name").fetchall()
+def set_type(conn, contact_type: str, email=None, query=None) -> int:
+    contact_type = normalize_type(contact_type)
+    if email:
+        cur = conn.execute(
+            "UPDATE customers SET contact_type=?, updated_at=datetime('now') WHERE email=?",
+            (contact_type, email),
+        )
+    elif query:
+        like = f"%{query}%"
+        cur = conn.execute(
+            """UPDATE customers SET contact_type=?, updated_at=datetime('now')
+               WHERE first_name LIKE ? OR last_name LIKE ? OR display_name LIKE ? OR email LIKE ?""",
+            (contact_type, like, like, like, like),
+        )
+    else:
+        raise SystemExit("set-type needs --email or --name")
+    if cur.rowcount == 0:
+        raise SystemExit("no matching customer")
+    return cur.rowcount
+
+
+def list_types() -> None:
+    print(f"{'slug':<14} {'meaning'}")
+    for k, v in CONTACT_TYPES.items():
+        print(f"{k:<14} {v}")
+
+
+def list_all(conn, contact_type=None):
+    contact_type = normalize_type(contact_type)
+    if contact_type:
+        rows = conn.execute(
+            "SELECT * FROM customer_devices WHERE contact_type=? ORDER BY last_name, first_name, tailscale_name",
+            (contact_type,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM customer_devices ORDER BY contact_type, last_name, first_name, tailscale_name"
+        ).fetchall()
     if not rows:
         print("(empty)")
         return
-    print(f"{'name':<28} {'email':<36} {'phone':<16} {'machine':<18} {'ip':<16}")
+    print(f"{'type':<12} {'name':<24} {'email':<32} {'phone':<16} {'machine':<18} {'ip':<16}")
     for r in rows:
         print(
-            f"{(r['name'] or ''):<28} {(r['email'] or ''):<36} {(r['phone'] or ''):<16} "
-            f"{(r['tailscale_name'] or ''):<18} {(r['tailscale_ip'] or ''):<16}"
+            f"{(r['contact_type'] or ''):<12} {(r['name'] or ''):<24} {(r['email'] or ''):<32} "
+            f"{(r['phone'] or ''):<16} {(r['tailscale_name'] or ''):<18} {(r['tailscale_ip'] or ''):<16}"
         )
 
 
@@ -192,15 +313,18 @@ def main():
     a.add_argument("--phone")
     a.add_argument("--display")
     a.add_argument("--role", default="member")
+    a.add_argument("--type", dest="contact_type", help="business|client|manager|researcher|romantic|self")
     a.add_argument("--machine", help="Tailscale hostname")
     a.add_argument("--ip")
     a.add_argument("--os")
-    sub.add_parser("list", help="print registry")
+    lst = sub.add_parser("list", help="print registry")
+    lst.add_argument("--type", dest="contact_type")
     inv = sub.add_parser("invite", help="queue a pending teammate invite")
     inv.add_argument("--email", required=True)
     inv.add_argument("--first")
     inv.add_argument("--last")
     inv.add_argument("--role", default="dev")
+    inv.add_argument("--type", dest="contact_type")
     sub.add_parser("invites", help="list invites")
     acc = sub.add_parser("accept", help="turn a pending invite into a customer")
     acc.add_argument("--email")
@@ -209,6 +333,7 @@ def main():
     acc.add_argument("--machine")
     acc.add_argument("--ip")
     acc.add_argument("--os")
+    acc.add_argument("--type", dest="contact_type")
     exp = sub.add_parser("export", help="write customer_devices CSV")
     exp.add_argument("-o", "--out", default="dolphin_pod_export.csv")
     rev = sub.add_parser("revoke", help="revoke a pending invite")
@@ -217,10 +342,18 @@ def main():
     rev.add_argument("--id", type=int, dest="invite_id")
     who_p = sub.add_parser("who", help="lookup a person or machine")
     who_p.add_argument("query")
+    st = sub.add_parser("set-type", help="tag an existing person")
+    st.add_argument("--type", dest="contact_type", required=True)
+    st.add_argument("--email")
+    st.add_argument("--name")
+    sub.add_parser("types", help="print contact type slugs")
     args = p.parse_args()
+    if args.cmd == "types":
+        list_types()
+        return
     conn = connect()
     if args.cmd == "list":
-        list_all(conn)
+        list_all(conn, args.contact_type)
         return
     if args.cmd == "invites":
         list_invites(conn)
@@ -237,25 +370,35 @@ def main():
     if args.cmd == "who":
         who(conn, args.query)
         return
+    if args.cmd == "set-type":
+        n = set_type(conn, args.contact_type, args.email, args.name)
+        conn.commit()
+        print(f"updated {n}")
+        list_all(conn)
+        return
     if args.cmd == "accept":
-        cid = accept_invite(conn, args.email, args.token, args.phone, args.machine, args.ip, args.os)
+        cid = accept_invite(
+            conn, args.email, args.token, args.phone, args.machine, args.ip, args.os, args.contact_type
+        )
         conn.commit()
         print(f"accepted -> customer_id={cid}")
         list_all(conn)
         return
     if args.cmd == "invite":
-        token = add_invite(conn, args.email, args.first, args.last, args.role)
+        token = add_invite(conn, args.email, args.first, args.last, args.role, args.contact_type)
         conn.commit()
-        print(f"pending invite for {args.email}")
+        print(f"pending invite for {args.email} type={normalize_type(args.contact_type) or '-'}")
         print(f"token={token}")
         print("They still must accept a Tailscale invite in the admin console.")
         list_invites(conn)
         return
-    cid = upsert_customer(conn, args.first, args.last, args.email, args.phone, args.display, args.role)
+    cid = upsert_customer(
+        conn, args.first, args.last, args.email, args.phone, args.display, args.role, contact_type=args.contact_type
+    )
     if args.machine:
         upsert_device(conn, cid, args.machine, args.ip, os=args.os)
     conn.commit()
-    print(f"customer_id={cid}")
+    print(f"customer_id={cid} type={normalize_type(args.contact_type) or '-'}")
     list_all(conn)
 
 

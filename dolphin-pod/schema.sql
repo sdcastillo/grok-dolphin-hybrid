@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS customers (
   email         TEXT UNIQUE,
   phone         TEXT,
   role          TEXT DEFAULT 'member', -- member | dev | admin | guest
+  contact_type  TEXT, -- self | business | client | manager | researcher | romantic
   notes         TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE INDEX IF NOT EXISTS idx_devices_customer ON devices(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
+CREATE INDEX IF NOT EXISTS idx_customers_type ON customers(contact_type);
 
 CREATE VIEW IF NOT EXISTS customer_devices AS
 SELECT
@@ -42,6 +44,8 @@ SELECT
   COALESCE(c.display_name, c.first_name || ' ' || c.last_name) AS name,
   c.email,
   c.phone,
+  c.role,
+  c.contact_type,
   d.id AS device_id,
   d.tailscale_name,
   d.tailscale_ip,
@@ -56,6 +60,7 @@ CREATE TABLE IF NOT EXISTS invites (
   first_name  TEXT,
   last_name   TEXT,
   role        TEXT DEFAULT 'dev',
+  contact_type TEXT,
   token       TEXT UNIQUE,
   status      TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | revoked
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),

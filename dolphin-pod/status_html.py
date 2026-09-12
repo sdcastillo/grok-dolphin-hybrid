@@ -28,14 +28,14 @@ def esc(v) -> str:
 def main() -> None:
     people = rows(
         """SELECT id, COALESCE(display_name, first_name || ' ' || last_name) AS name,
-                  email, phone, role FROM customers ORDER BY last_name, first_name"""
+                  email, phone, role, contact_type FROM customers ORDER BY contact_type, last_name, first_name"""
     )
     devices = rows(
         """SELECT customer_id, tailscale_name, tailscale_ip, os, online, last_seen
            FROM devices ORDER BY tailscale_name"""
     )
     invites = rows(
-        "SELECT email, first_name, last_name, role, status, created_at FROM invites ORDER BY id"
+        "SELECT email, first_name, last_name, role, contact_type, status, created_at FROM invites ORDER BY id"
     )
     by_cust: dict[int, list] = {}
     for d in devices:
@@ -64,45 +64,46 @@ def main() -> None:
         f"<p class='meta'>{esc(now)} · {len(people)} people · {len(devices)} devices "
         f"({online} online) · {pending} pending invites · no location stored</p>",
         "<h2>People + machines</h2>",
-        "<table><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th>"
+        "<table><tr><th>Type</th><th>Name</th><th>Email</th><th>Phone</th><th>Role</th>"
         "<th>Machine</th><th>IP</th><th>OS</th><th>State</th></tr>",
     ]
     if not people:
-        parts.append("<tr><td colspan='8'>(empty)</td></tr>")
+        parts.append("<tr><td colspan='9'>(empty)</td></tr>")
     for c in people:
         devs = by_cust.get(c["id"]) or [None]
         for i, d in enumerate(devs):
+            ctype = esc(c["contact_type"]) if i == 0 else ""
             name = esc(c["name"]) if i == 0 else ""
             email = esc(c["email"]) if i == 0 else ""
             phone = esc(c["phone"]) if i == 0 else ""
             role = esc(c["role"]) if i == 0 else ""
             if d is None:
                 parts.append(
-                    f"<tr><td>{name}</td><td>{email}</td><td>{phone}</td><td>{role}</td>"
+                    f"<tr><td>{ctype}</td><td>{name}</td><td>{email}</td><td>{phone}</td><td>{role}</td>"
                     "<td colspan='4'>(no devices)</td></tr>"
                 )
             else:
                 state = "online" if d["online"] else "offline"
                 cls = "on" if d["online"] else "off"
                 parts.append(
-                    f"<tr><td>{name}</td><td>{email}</td><td>{phone}</td><td>{role}</td>"
+                    f"<tr><td>{ctype}</td><td>{name}</td><td>{email}</td><td>{phone}</td><td>{role}</td>"
                     f"<td>{esc(d['tailscale_name'])}</td><td>{esc(d['tailscale_ip'])}</td>"
                     f"<td>{esc(d['os'])}</td><td class='{cls}'>{state}</td></tr>"
                 )
     parts.append("</table>")
-    parts.append("<h2>Invites</h2><table><tr><th>Status</th><th>Role</th><th>Email</th><th>Name</th><th>Created</th></tr>")
+    parts.append("<h2>Invites</h2><table><tr><th>Status</th><th>Type</th><th>Role</th><th>Email</th><th>Name</th><th>Created</th></tr>")
     if not invites:
-        parts.append("<tr><td colspan='5'>(no invites)</td></tr>")
+        parts.append("<tr><td colspan='6'>(no invites)</td></tr>")
     for i in invites:
         name = " ".join(x for x in (i["first_name"], i["last_name"]) if x)
         parts.append(
-            f"<tr><td>{esc(i['status'])}</td><td>{esc(i['role'])}</td><td>{esc(i['email'])}</td>"
+            f"<tr><td>{esc(i['status'])}</td><td>{esc(i['contact_type'])}</td><td>{esc(i['role'])}</td><td>{esc(i['email'])}</td>"
             f"<td>{esc(name)}</td><td>{esc(i['created_at'])}</td></tr>"
         )
     parts.extend(
         [
             "</table>",
-            "<p class='note'>Local file only. Exact location is not stored. Andy and other unregistered nodes stay off this page until they opt in.</p>",
+            "<p class='note'>Local file only. Exact location is not stored. Romantic / other labels stay private. Unregistered nodes stay off this page.</p>",
             "</body></html>",
         ]
     )

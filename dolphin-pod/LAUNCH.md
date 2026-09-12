@@ -54,3 +54,25 @@ python3 invite_letter.py --first NAME --last NAME --email them@example.com -o ~/
 ```
 
 Then invite them in the Tailscale admin console. Do not auto-enroll devices.
+
+## Contact types
+
+`role` is mesh privilege (member/dev/admin). `contact_type` is the relationship bucket:
+
+| slug | meaning |
+|---|---|
+| self | you |
+| business | business |
+| client | client |
+| manager | future boss / manager |
+| researcher | student / researcher |
+| romantic | romantic / spouse potential (private) |
+
+```bash
+python3 register.py types
+python3 register.py add --first NAME --last NAME --email them@example.com --type client
+python3 register.py set-type --email them@example.com --type manager
+python3 register.py list --type business
+```
+
+Romantic is a private label only. Do not post it. Do not infer it from a name.
