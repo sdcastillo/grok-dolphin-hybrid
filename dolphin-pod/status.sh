@@ -12,5 +12,7 @@ if command -v tailscale >/dev/null; then
   tailscale status 2>/dev/null | grep -v funnel | grep -v '^$' | grep -v Health | grep -v overwritten | grep -v 'Funnel on' | grep -v marlin-pollux.ts.net || true
 fi
 python3 "$DIR/status_html.py"
+python3 "$DIR/rolodex.py"
 echo
 echo "status page: $DIR/status.html"
+echo "rolodex: $DIR/rolodex.html"

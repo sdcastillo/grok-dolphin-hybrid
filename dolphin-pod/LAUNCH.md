@@ -76,3 +76,13 @@ python3 register.py list --type business
 ```
 
 Romantic is a private label only. Do not post it. Do not infer it from a name.
+
+## Rolladex
+
+Local card file. Same people as the registry. No street address.
+
+```bash
+python3 register.py add --first NAME --last NAME --email a@b.c --phone 555 --type client --org Acme --title Analyst
+python3 register.py rolodex
+# open ~/DOLPHIN_POD/rolodex.html
+```

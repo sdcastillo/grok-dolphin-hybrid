@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS customers (
   phone         TEXT,
   role          TEXT DEFAULT 'member', -- member | dev | admin | guest
   contact_type  TEXT, -- self | business | client | manager | researcher | romantic
+  org           TEXT,
+  title         TEXT,
   notes         TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -46,6 +48,9 @@ SELECT
   c.phone,
   c.role,
   c.contact_type,
+  c.org,
+  c.title,
+  c.notes,
   d.id AS device_id,
   d.tailscale_name,
   d.tailscale_ip,

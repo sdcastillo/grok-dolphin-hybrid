@@ -61,6 +61,8 @@ def upsert_customer(
     role="member",
     notes=None,
     contact_type=None,
+    org=None,
+    title=None,
 ) -> int:
     display = display or f"{first} {last}"
     contact_type = normalize_type(contact_type)
@@ -69,15 +71,15 @@ def upsert_customer(
         if row:
             conn.execute(
                 """UPDATE customers SET first_name=?, last_name=?, display_name=?, phone=COALESCE(?, phone),
-                   role=?, notes=COALESCE(?, notes),
+                   role=?, notes=COALESCE(?, notes), org=COALESCE(?, org), title=COALESCE(?, title),
                    contact_type=COALESCE(?, contact_type), updated_at=datetime('now') WHERE id=?""",
-                (first, last, display, phone, role, notes, contact_type, row["id"]),
+                (first, last, display, phone, role, notes, org, title, contact_type, row["id"]),
             )
             return row["id"]
     cur = conn.execute(
-        """INSERT INTO customers (first_name, last_name, display_name, email, phone, role, notes, contact_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (first, last, display, email, phone, role, notes, contact_type),
+        """INSERT INTO customers (first_name, last_name, display_name, email, phone, role, notes, contact_type, org, title)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (first, last, display, email, phone, role, notes, contact_type, org, title),
     )
     return cur.lastrowid
 
@@ -314,6 +316,9 @@ def main():
     a.add_argument("--display")
     a.add_argument("--role", default="member")
     a.add_argument("--type", dest="contact_type", help="business|client|manager|researcher|romantic|self")
+    a.add_argument("--org")
+    a.add_argument("--title")
+    a.add_argument("--notes")
     a.add_argument("--machine", help="Tailscale hostname")
     a.add_argument("--ip")
     a.add_argument("--os")
@@ -347,9 +352,16 @@ def main():
     st.add_argument("--email")
     st.add_argument("--name")
     sub.add_parser("types", help="print contact type slugs")
+    sub.add_parser("rolodex", help="write local Rolladex HTML")
     args = p.parse_args()
     if args.cmd == "types":
         list_types()
+        return
+    if args.cmd == "rolodex":
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from rolodex import main as write_rolodex
+        write_rolodex()
         return
     conn = connect()
     if args.cmd == "list":
@@ -393,7 +405,9 @@ def main():
         list_invites(conn)
         return
     cid = upsert_customer(
-        conn, args.first, args.last, args.email, args.phone, args.display, args.role, contact_type=args.contact_type
+        conn, args.first, args.last, args.email, args.phone, args.display, args.role,
+        notes=getattr(args, "notes", None), contact_type=args.contact_type,
+        org=getattr(args, "org", None), title=getattr(args, "title", None),
     )
     if args.machine:
         upsert_device(conn, cid, args.machine, args.ip, os=args.os)
