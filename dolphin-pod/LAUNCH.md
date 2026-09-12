@@ -17,6 +17,7 @@ Private Tailscale network + customer/device registry. Not a public GPS map.
 2. Register them here — don’t invent phones:
 
 ```bash
+python3 register.py invite --email them@example.com --first NAME --last NAME --role dev
 python3 register.py add --first NAME --last NAME --email them@example.com --role dev \
   --machine their-hostname --ip 100.x.x.x
 ```

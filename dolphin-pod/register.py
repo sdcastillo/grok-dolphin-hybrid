@@ -53,6 +53,30 @@ def upsert_device(conn, customer_id, name, ip=None, ipv6=None, os=None, online=0
     return cur.lastrowid
 
 
+def add_invite(conn, email, first=None, last=None, role="dev"):
+    import secrets
+    token = secrets.token_urlsafe(16)
+    conn.execute(
+        """INSERT INTO invites (email, first_name, last_name, role, token, status)
+           VALUES (?, ?, ?, ?, ?, 'pending')""",
+        (email, first, last, role, token),
+    )
+    return token
+
+
+def list_invites(conn):
+    rows = conn.execute(
+        "SELECT id, email, first_name, last_name, role, status, created_at FROM invites ORDER BY id"
+    ).fetchall()
+    if not rows:
+        print("(no invites)")
+        return
+    print(f"{'id':<4} {'status':<10} {'role':<8} {'email':<36} {'name'}")
+    for r in rows:
+        name = " ".join(x for x in (r["first_name"], r["last_name"]) if x)
+        print(f"{r['id']:<4} {r['status']:<10} {r['role']:<8} {(r['email'] or ''):<36} {name}")
+
+
 def list_all(conn):
     rows = conn.execute("SELECT * FROM customer_devices ORDER BY last_name, first_name, tailscale_name").fetchall()
     if not rows:
@@ -80,10 +104,27 @@ def main():
     a.add_argument("--ip")
     a.add_argument("--os")
     sub.add_parser("list", help="print registry")
+    inv = sub.add_parser("invite", help="queue a pending teammate invite")
+    inv.add_argument("--email", required=True)
+    inv.add_argument("--first")
+    inv.add_argument("--last")
+    inv.add_argument("--role", default="dev")
+    sub.add_parser("invites", help="list invites")
     args = p.parse_args()
     conn = connect()
     if args.cmd == "list":
         list_all(conn)
+        return
+    if args.cmd == "invites":
+        list_invites(conn)
+        return
+    if args.cmd == "invite":
+        token = add_invite(conn, args.email, args.first, args.last, args.role)
+        conn.commit()
+        print(f"pending invite for {args.email}")
+        print(f"token={token}")
+        print("They still must accept a Tailscale invite in the admin console.")
+        list_invites(conn)
         return
     cid = upsert_customer(conn, args.first, args.last, args.email, args.phone, args.display, args.role)
     if args.machine:
