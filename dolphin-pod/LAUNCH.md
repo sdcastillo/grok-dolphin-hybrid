@@ -29,3 +29,10 @@ python3 register.py add --first NAME --last NAME --email them@example.com --role
 - Exact location stays off posts and off this database.
 - Do not auto-enroll unknown Tailscale nodes.
 - Andy / other people’s phones are not tracked unless they register themselves.
+
+## Accept + export
+
+```bash
+python3 register.py accept --email them@example.com --machine their-hostname --ip 100.x.x.x
+python3 register.py export -o ~/DOLPHIN_POD/export.csv
+```

@@ -77,6 +77,45 @@ def list_invites(conn):
         print(f"{r['id']:<4} {r['status']:<10} {r['role']:<8} {(r['email'] or ''):<36} {name}")
 
 
+
+def accept_invite(conn, email=None, token=None, phone=None, machine=None, ip=None, os=None) -> int:
+    if token:
+        inv = conn.execute("SELECT * FROM invites WHERE token = ? AND status = 'pending'", (token,)).fetchone()
+    elif email:
+        inv = conn.execute(
+            "SELECT * FROM invites WHERE email = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+            (email,),
+        ).fetchone()
+    else:
+        raise SystemExit("accept needs --email or --token")
+    if not inv:
+        raise SystemExit("no pending invite")
+    first = inv["first_name"] or "Pending"
+    last = inv["last_name"] or "Member"
+    cid = upsert_customer(conn, first, last, inv["email"], phone, role=inv["role"] or "dev")
+    if machine:
+        upsert_device(conn, cid, machine, ip, os=os)
+    conn.execute(
+        "UPDATE invites SET status='accepted', accepted_at=datetime('now') WHERE id=?",
+        (inv["id"],),
+    )
+    return cid
+
+
+def export_csv(conn, path: str) -> None:
+    import csv
+    rows = conn.execute("SELECT * FROM customer_devices ORDER BY last_name, first_name").fetchall()
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["name", "first_name", "last_name", "email", "phone", "tailscale_name", "tailscale_ip", "os", "online", "last_seen"])
+        for r in rows:
+            w.writerow([
+                r["name"], r["first_name"], r["last_name"], r["email"], r["phone"],
+                r["tailscale_name"], r["tailscale_ip"], r["os"], r["online"], r["last_seen"],
+            ])
+    print(f"wrote {path} ({len(rows)} rows)")
+
+
 def list_all(conn):
     rows = conn.execute("SELECT * FROM customer_devices ORDER BY last_name, first_name, tailscale_name").fetchall()
     if not rows:
@@ -110,6 +149,15 @@ def main():
     inv.add_argument("--last")
     inv.add_argument("--role", default="dev")
     sub.add_parser("invites", help="list invites")
+    acc = sub.add_parser("accept", help="turn a pending invite into a customer")
+    acc.add_argument("--email")
+    acc.add_argument("--token")
+    acc.add_argument("--phone")
+    acc.add_argument("--machine")
+    acc.add_argument("--ip")
+    acc.add_argument("--os")
+    exp = sub.add_parser("export", help="write customer_devices CSV")
+    exp.add_argument("-o", "--out", default="dolphin_pod_export.csv")
     args = p.parse_args()
     conn = connect()
     if args.cmd == "list":
@@ -117,6 +165,15 @@ def main():
         return
     if args.cmd == "invites":
         list_invites(conn)
+        return
+    if args.cmd == "export":
+        export_csv(conn, args.out)
+        return
+    if args.cmd == "accept":
+        cid = accept_invite(conn, args.email, args.token, args.phone, args.machine, args.ip, args.os)
+        conn.commit()
+        print(f"accepted -> customer_id={cid}")
+        list_all(conn)
         return
     if args.cmd == "invite":
         token = add_invite(conn, args.email, args.first, args.last, args.role)
