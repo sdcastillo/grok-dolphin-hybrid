@@ -36,3 +36,11 @@ python3 register.py add --first NAME --last NAME --email them@example.com --role
 python3 register.py accept --email them@example.com --machine their-hostname --ip 100.x.x.x
 python3 register.py export -o ~/DOLPHIN_POD/export.csv
 ```
+
+## Lookup / revoke / local page
+
+```bash
+python3 register.py who Sam
+python3 register.py revoke --email them@example.com
+bash status.sh   # also writes status.html (local, no location)
+```

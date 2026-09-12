@@ -8,3 +8,6 @@ hf_token.env
 hf-venv/
 *.safetensors
 dolphin-pod/dolphin_pod.sqlite
+dolphin-pod/status.html
+dolphin-pod/export.csv
+dolphin-pod/*.csv

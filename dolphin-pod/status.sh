@@ -11,3 +11,6 @@ if command -v tailscale >/dev/null; then
   echo "=== tailscale (humans/machines, no funnel) ==="
   tailscale status 2>/dev/null | grep -v funnel | grep -v '^$' | grep -v Health | grep -v overwritten | grep -v 'Funnel on' | grep -v marlin-pollux.ts.net || true
 fi
+python3 "$DIR/status_html.py"
+echo
+echo "status page: $DIR/status.html"

@@ -116,6 +116,59 @@ def export_csv(conn, path: str) -> None:
     print(f"wrote {path} ({len(rows)} rows)")
 
 
+
+def revoke_invite(conn, email=None, token=None, invite_id=None) -> int:
+    if token:
+        cur = conn.execute(
+            "UPDATE invites SET status='revoked' WHERE token=? AND status='pending'",
+            (token,),
+        )
+    elif invite_id is not None:
+        cur = conn.execute(
+            "UPDATE invites SET status='revoked' WHERE id=? AND status='pending'",
+            (invite_id,),
+        )
+    elif email:
+        cur = conn.execute(
+            "UPDATE invites SET status='revoked' WHERE email=? AND status='pending'",
+            (email,),
+        )
+    else:
+        raise SystemExit("revoke needs --email, --token, or --id")
+    if cur.rowcount == 0:
+        raise SystemExit("no pending invite to revoke")
+    return cur.rowcount
+
+
+def who(conn, q: str) -> None:
+    like = f"%{q}%"
+    people = conn.execute(
+        """SELECT DISTINCT c.id, COALESCE(c.display_name, c.first_name || ' ' || c.last_name) AS name,
+                  c.email, c.phone, c.role
+           FROM customers c
+           LEFT JOIN devices d ON d.customer_id = c.id
+           WHERE c.first_name LIKE ? OR c.last_name LIKE ? OR c.display_name LIKE ?
+              OR c.email LIKE ? OR c.phone LIKE ? OR d.tailscale_name LIKE ?
+              OR d.tailscale_ip LIKE ?
+           ORDER BY c.last_name, c.first_name""",
+        (like, like, like, like, like, like, like),
+    ).fetchall()
+    if not people:
+        print(f"(no match for {q!r})")
+        return
+    for c in people:
+        print(f"{c['name']}  {c['email'] or ''}  {c['phone'] or ''}  role={c['role']}")
+        devs = conn.execute(
+            "SELECT tailscale_name, tailscale_ip, os, online, last_seen FROM devices WHERE customer_id=? ORDER BY tailscale_name",
+            (c["id"],),
+        ).fetchall()
+        if not devs:
+            print("  (no devices)")
+        for d in devs:
+            on = "online" if d["online"] else "offline"
+            print(f"  {d['tailscale_name']:<18} {(d['tailscale_ip'] or ''):<16} {(d['os'] or ''):<8} {on}  {d['last_seen'] or ''}")
+
+
 def list_all(conn):
     rows = conn.execute("SELECT * FROM customer_devices ORDER BY last_name, first_name, tailscale_name").fetchall()
     if not rows:
@@ -158,6 +211,12 @@ def main():
     acc.add_argument("--os")
     exp = sub.add_parser("export", help="write customer_devices CSV")
     exp.add_argument("-o", "--out", default="dolphin_pod_export.csv")
+    rev = sub.add_parser("revoke", help="revoke a pending invite")
+    rev.add_argument("--email")
+    rev.add_argument("--token")
+    rev.add_argument("--id", type=int, dest="invite_id")
+    who_p = sub.add_parser("who", help="lookup a person or machine")
+    who_p.add_argument("query")
     args = p.parse_args()
     conn = connect()
     if args.cmd == "list":
@@ -168,6 +227,15 @@ def main():
         return
     if args.cmd == "export":
         export_csv(conn, args.out)
+        return
+    if args.cmd == "revoke":
+        n = revoke_invite(conn, args.email, args.token, args.invite_id)
+        conn.commit()
+        print(f"revoked {n} invite(s)")
+        list_invites(conn)
+        return
+    if args.cmd == "who":
+        who(conn, args.query)
         return
     if args.cmd == "accept":
         cid = accept_invite(conn, args.email, args.token, args.phone, args.machine, args.ip, args.os)
