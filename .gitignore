@@ -7,3 +7,4 @@ hf_token.env
 .venv/
 hf-venv/
 *.safetensors
+dolphin-pod/dolphin_pod.sqlite
