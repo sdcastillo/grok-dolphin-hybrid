@@ -73,3 +73,19 @@ CREATE TABLE IF NOT EXISTS invites (
 );
 CREATE INDEX IF NOT EXISTS idx_invites_email ON invites(email);
 CREATE INDEX IF NOT EXISTS idx_invites_status ON invites(status);
+
+CREATE TABLE IF NOT EXISTS outreach (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id     INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  channel         TEXT,
+  sent_at         TEXT,
+  who_replied     TEXT,
+  replied_at      TEXT,
+  time_to_reply   TEXT,
+  follow_up_at    TEXT,
+  outcome         TEXT,
+  notes           TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_outreach_customer ON outreach(customer_id);

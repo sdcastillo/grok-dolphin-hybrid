@@ -283,6 +283,75 @@ def list_types() -> None:
         print(f"{k:<14} {v}")
 
 
+
+def list_outreach(conn):
+    rows = conn.execute(
+        """SELECT o.id, COALESCE(c.display_name, c.first_name || ' ' || c.last_name) AS name,
+                  c.contact_type, o.channel, o.sent_at, o.who_replied, o.replied_at,
+                  o.time_to_reply, o.follow_up_at, o.outcome
+           FROM outreach o JOIN customers c ON c.id = o.customer_id
+           ORDER BY o.id"""
+    ).fetchall()
+    print(f"{'id':<4} {'type':<12} {'name':<22} {'sent':<12} {'who_replied':<16} {'time_to_reply':<14} {'outcome'}")
+    if not rows:
+        print("(no outreach rows)")
+        return
+    for r in rows:
+        print(
+            f"{r['id']:<4} {(r['contact_type'] or ''):<12} {(r['name'] or ''):<22} "
+            f"{(r['sent_at'] or ''):<12} {(r['who_replied'] or ''):<16} "
+            f"{(r['time_to_reply'] or ''):<14} {r['outcome'] or ''}"
+        )
+
+
+def set_reply(conn, email=None, name=None, who_replied=None, replied_at=None,
+              sent_at=None, channel=None, time_to_reply=None, follow_up_at=None,
+              outcome=None, notes=None) -> int:
+    if email:
+        row = conn.execute("SELECT id FROM customers WHERE email=?", (email,)).fetchone()
+    elif name:
+        like = f"%{name}%"
+        row = conn.execute(
+            "SELECT id FROM customers WHERE first_name LIKE ? OR last_name LIKE ? OR display_name LIKE ?",
+            (like, like, like),
+        ).fetchone()
+    else:
+        raise SystemExit("reply needs --email or --name")
+    if not row:
+        raise SystemExit("no matching customer")
+    cid = row["id"]
+    existing = conn.execute(
+        "SELECT id FROM outreach WHERE customer_id=? ORDER BY id DESC LIMIT 1", (cid,)
+    ).fetchone()
+    fields = {
+        "who_replied": who_replied,
+        "replied_at": replied_at,
+        "sent_at": sent_at,
+        "channel": channel,
+        "time_to_reply": time_to_reply,
+        "follow_up_at": follow_up_at,
+        "outcome": outcome,
+        "notes": notes,
+    }
+    sets = {k: v for k, v in fields.items() if v is not None}
+    if existing:
+        if not sets:
+            return existing["id"]
+        cols = ", ".join(f"{k}=?" for k in sets)
+        conn.execute(
+            f"UPDATE outreach SET {cols}, updated_at=datetime('now') WHERE id=?",
+            [*sets.values(), existing["id"]],
+        )
+        return existing["id"]
+    conn.execute(
+        """INSERT INTO outreach (customer_id, channel, sent_at, who_replied, replied_at,
+             time_to_reply, follow_up_at, outcome, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (cid, channel, sent_at, who_replied, replied_at, time_to_reply, follow_up_at, outcome or "pending", notes),
+    )
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
 def list_all(conn, contact_type=None):
     contact_type = normalize_type(contact_type)
     if contact_type:
@@ -353,6 +422,18 @@ def main():
     st.add_argument("--name")
     sub.add_parser("types", help="print contact type slugs")
     sub.add_parser("rolodex", help="write local Rolladex HTML")
+    sub.add_parser("outreach", help="print outreach table and write HTML/CSV")
+    rp = sub.add_parser("reply", help="fill who replied / times on a contact")
+    rp.add_argument("--email")
+    rp.add_argument("--name")
+    rp.add_argument("--who", dest="who_replied")
+    rp.add_argument("--replied-at")
+    rp.add_argument("--sent-at")
+    rp.add_argument("--channel")
+    rp.add_argument("--time-to-reply")
+    rp.add_argument("--follow-up")
+    rp.add_argument("--outcome")
+    rp.add_argument("--notes")
     args = p.parse_args()
     if args.cmd == "types":
         list_types()
@@ -362,6 +443,29 @@ def main():
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from rolodex import main as write_rolodex
         write_rolodex()
+        return
+    if args.cmd == "outreach":
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from outreach import main as write_outreach
+        conn = connect()
+        list_outreach(conn)
+        write_outreach()
+        return
+    if args.cmd == "reply":
+        conn = connect()
+        oid = set_reply(
+            conn, args.email, args.name, args.who_replied, args.replied_at,
+            args.sent_at, args.channel, args.time_to_reply, args.follow_up,
+            args.outcome, args.notes,
+        )
+        conn.commit()
+        print(f"outreach_id={oid}")
+        list_outreach(conn)
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from outreach import main as write_outreach
+        write_outreach()
         return
     conn = connect()
     if args.cmd == "list":

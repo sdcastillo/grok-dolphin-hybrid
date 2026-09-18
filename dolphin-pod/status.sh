@@ -13,6 +13,8 @@ if command -v tailscale >/dev/null; then
 fi
 python3 "$DIR/status_html.py"
 python3 "$DIR/rolodex.py"
+python3 "$DIR/outreach.py"
 echo
 echo "status page: $DIR/status.html"
 echo "rolodex: $DIR/rolodex.html"
+echo "outreach: $DIR/outreach.html"

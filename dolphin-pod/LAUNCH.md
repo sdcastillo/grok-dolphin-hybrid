@@ -86,3 +86,15 @@ python3 register.py add --first NAME --last NAME --email a@b.c --phone 555 --typ
 python3 register.py rolodex
 # open ~/DOLPHIN_POD/rolodex.html
 ```
+
+## Outreach table
+
+Empty columns to fill later: channel, sent_at, who_replied, replied_at, time_to_reply, follow_up_at, outcome, notes.
+
+```bash
+python3 migrate_outreach.py
+python3 register.py outreach          # writes outreach.html + outreach.csv
+python3 register.py reply --email them@example.com --who NAME --replied-at "2026-09-18 16:00" --time-to-reply "2d"
+```
+
+Open `outreach.html` or `outreach.csv`. Home copy on Polar: `~/DOLPHIN_POD/`.
