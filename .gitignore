@@ -14,3 +14,9 @@ dolphin-pod/*.csv
 dolphin-pod/rolodex.html
 dolphin-pod/outreach.html
 dolphin-pod/outreach.csv
+_site/
+.jekyll-cache/
+.sass-cache/
+.bundle/
+vendor/
+Gemfile.lock
